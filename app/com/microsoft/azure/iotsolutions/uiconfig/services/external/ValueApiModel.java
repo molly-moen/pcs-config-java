@@ -46,6 +46,7 @@ public class ValueApiModel {
         return eTag;
     }
 
+    @JsonProperty("Etag")
     public void setETag(String eTag) {
         this.eTag = eTag;
     }

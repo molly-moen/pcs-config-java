@@ -4,29 +4,29 @@ package com.microsoft.azure.iotsolutions.uiconfig.services;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
-import com.microsoft.azure.iotsolutions.uiconfig.services.exceptions.BaseException;
-import com.microsoft.azure.iotsolutions.uiconfig.services.exceptions.ConflictingResourceException;
-import com.microsoft.azure.iotsolutions.uiconfig.services.exceptions.ExternalDependencyException;
-import com.microsoft.azure.iotsolutions.uiconfig.services.exceptions.ResourceNotFoundException;
+import com.microsoft.azure.iotsolutions.uiconfig.services.exceptions.*;
 import com.microsoft.azure.iotsolutions.uiconfig.services.external.IIothubManagerServiceClient;
 import com.microsoft.azure.iotsolutions.uiconfig.services.external.ISimulationServiceClient;
 import com.microsoft.azure.iotsolutions.uiconfig.services.external.IStorageAdapterClient;
 import com.microsoft.azure.iotsolutions.uiconfig.services.external.ValueApiModel;
+import com.microsoft.azure.iotsolutions.uiconfig.services.helpers.StorageWriteLock;
 import com.microsoft.azure.iotsolutions.uiconfig.services.models.CacheValue;
 import com.microsoft.azure.iotsolutions.uiconfig.services.models.DeviceTwinName;
 import com.microsoft.azure.iotsolutions.uiconfig.services.runtime.IServicesConfig;
 import org.joda.time.DateTime;
 import org.joda.time.format.DateTimeFormat;
 import org.joda.time.format.DateTimeFormatter;
-import org.joda.time.format.DateTimeParser;
 import play.Logger;
 import play.libs.Json;
 
 import java.net.URISyntaxException;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 
 @Singleton
 public class Cache implements ICache {
@@ -39,6 +39,9 @@ public class Cache implements ICache {
     private final int rebuildTimeout;
     private final String CacheCollectionId = "cache";
     private final String CacheKey = "twin";
+    private final List<String> cacheWhitelist;
+    private static final String WHITELIST_TAG_PREFIX = "tags.";
+    private static final String WHITELIST_REPORTED_PREFIX = "reported.";
 
     @Inject
     public Cache(IStorageAdapterClient storageClient,
@@ -50,6 +53,7 @@ public class Cache implements ICache {
         this.simulationClient = simulationClient;
         this.cacheTTL = config.getCacheTTL();
         this.rebuildTimeout = config.getCacheRebuildTimeout();
+        this.cacheWhitelist = config.getCacheWhiteList();
         // global setting is not recommend for application_onStart event, PLS refer here for details :https://www.playframework.com/documentation/2.6.x/GlobalSettings
         new Thread(new Runnable() {
             @Override
@@ -129,65 +133,68 @@ public class Cache implements ICache {
     }
 
     @Override
-    public CompletionStage RebuildCacheAsync(boolean force) throws BaseException, ExecutionException, InterruptedException, URISyntaxException {
+    public CompletionStage RebuildCacheAsync(boolean force) throws ResourceOutOfDateException, ExternalDependencyException {
         {
-            int retry = 5;
+            StorageWriteLock<CacheValue> lock = new StorageWriteLock<>(
+                    CacheValue.class,
+                    this.storageClient,
+                    CacheCollectionId,
+                    CacheKey,
+                    (c, b) -> c.setRebuilding(b),
+                    m -> this.NeedBuild(force, m));
+
             while (true) {
-                HashSet<String> reportedNames = null;
+                Optional<Boolean> locked = null;
+                try {
+                    locked = lock.TryLockAsync().toCompletableFuture().get();
+                } catch (InterruptedException | ExecutionException e) {
+                    // do nothing
+                }
+                if (locked == null) {
+                    this.log.warn("Cache rebuilding: lock failed due to conflict. Retry soon");
+                    continue;
+                }
+                if (!locked.get()) {
+                    return CompletableFuture.supplyAsync(() -> false);
+                }
+                // Build the cache content
+                CompletableFuture<DeviceTwinName> twinNamesTask = this.GetValidNamesAsync().toCompletableFuture();
+                CompletableFuture<HashSet<String>> simulationNamesTask = null;
+                try {
+                    simulationNamesTask = this.simulationClient.GetDevicePropertyNamesAsync().toCompletableFuture();
+                } catch (URISyntaxException e) {
+                    throw new ExternalDependencyException("falied to get all simulation DevicePropertyNames  ");
+                }
+                try {
+                    CompletableFuture.allOf(twinNamesTask, simulationNamesTask).get();
+                } catch (InterruptedException | ExecutionException e) {
+                    throw new ExternalDependencyException("falied to get all simulation DevicePropertyNames or ValidNames  ");
+                }
+
                 DeviceTwinName twinNames = null;
-                ValueApiModel cache = null;
-                String etag = null;
-
                 try {
-                    cache = this.storageClient.getAsync(CacheCollectionId, CacheKey).toCompletableFuture().get();
-                } catch (Exception e) {
-                    log.info(String.format("RebuildCacheAsync:%s:%s not found.", CacheCollectionId, CacheKey));
-                }
-
-                boolean needBuild = this.NeedBuild(force, cache);
-                if (!needBuild) {
-                    return CompletableFuture.runAsync(() -> {
-                    });
-                }
-
-                try {
-                    CompletableFuture<DeviceTwinName> twinNamesTask = this.iotHubClient.GetDeviceTwinNamesAsync().toCompletableFuture();
-                    CompletableFuture<HashSet<String>> reportedNamesTask = this.simulationClient.GetDevicePropertyNamesAsync().toCompletableFuture();
-                    CompletableFuture.allOf(twinNamesTask, reportedNamesTask).get();
                     twinNames = twinNamesTask.get();
-                    reportedNames = reportedNamesTask.get();
-                    reportedNames.addAll(twinNames.getReportedProperties());
-                } catch (Exception e) {
-                    log.info(String.format("retry %d for %s:%s  IothubManagerService and SimulationService  are not both ready,wait 10 seconds", retry, CacheCollectionId, CacheKey));
-                    if (retry-- < 1) {
-                        return CompletableFuture.runAsync(() -> {
-                        });
-                    }
-                    Thread.sleep(10000);
-                    continue;
+                } catch (InterruptedException | ExecutionException e) {
+                    throw new ExternalDependencyException("falied to get ValidNames  ");
+                }
+                try {
+                    twinNames.getReportedProperties().addAll(simulationNamesTask.get());
+                } catch (InterruptedException | ExecutionException e) {
+                    throw new ExternalDependencyException("falied to get all simulation DevicePropertyNames  ");
                 }
 
-                if (cache != null) {
-                    CacheValue model = Json.fromJson(Json.parse(cache.getData()), CacheValue.class);
-                    model.setRebuilding(true);
-                    ValueApiModel response = this.storageClient.updateAsync(CacheCollectionId, CacheKey, Json.stringify(Json.toJson(model)),
-                            cache.getETag()).
-                            toCompletableFuture().get();
-                    etag = response.getETag();
-                } else {
-                    ValueApiModel response = this.storageClient.updateAsync(CacheCollectionId, CacheKey,
-                            Json.stringify(Json.toJson(new CacheValue(null, null, false))), null).
-                            toCompletableFuture().get();
-                    etag = response.getETag();
-                }
-                String value = Json.stringify(Json.toJson(new CacheValue(twinNames.getTags(), reportedNames, false)));
+                Boolean updated = null;
                 try {
-                    return this.storageClient.updateAsync(CacheCollectionId, CacheKey, value, etag).thenAcceptAsync(m -> {
-                    });
-                } catch (ConflictingResourceException e) {
-                    log.info("rebuild Conflicted ");
-                    continue;
+                    updated = lock.WriteAndReleaseAsync(new CacheValue(twinNames.getTags(), twinNames.getReportedProperties())).toCompletableFuture().get();
+                } catch (InterruptedException | ExecutionException e) {
+                    throw new ExternalDependencyException(String.format("falied to WriteAndRelease lock for %s,%s ", CacheCollectionId, CacheKey));
                 }
+
+                if (updated) {
+                    return CompletableFuture.supplyAsync(() -> true);
+                }
+
+                this.log.warn("Cache rebuilding: write failed due to conflict. Retry soon");
             }
         }
     }
@@ -206,4 +213,51 @@ public class Cache implements ICache {
         }
         return needBuild;
     }
+
+    private CompletionStage<DeviceTwinName> GetValidNamesAsync() {
+        DeviceTwinName fullNameWhitelist = new DeviceTwinName(), prefixWhitelist = new DeviceTwinName();
+        ParseWhitelist(this.cacheWhitelist, fullNameWhitelist, prefixWhitelist);
+
+        DeviceTwinName validNames = new DeviceTwinName(fullNameWhitelist.getTags(), fullNameWhitelist.getReportedProperties());
+
+        if (!prefixWhitelist.getTags().isEmpty() || !prefixWhitelist.getReportedProperties().isEmpty()) {
+            DeviceTwinName allNames = null;
+            try {
+                allNames = this.iotHubClient.GetDeviceTwinNamesAsync().toCompletableFuture().get();
+            } catch (InterruptedException | ExecutionException | URISyntaxException e) {
+                e.printStackTrace();
+            }
+
+            validNames.getTags().addAll(allNames.getTags().stream().
+                    filter(m -> prefixWhitelist.getTags().stream().anyMatch(m::startsWith)).collect(Collectors.toSet()));
+
+            validNames.getReportedProperties().addAll(allNames.getReportedProperties().stream().
+                    filter(m -> prefixWhitelist.getReportedProperties().stream().anyMatch(m::startsWith)).collect(Collectors.toSet()));
+        }
+
+        return CompletableFuture.supplyAsync(() -> validNames);
+    }
+
+    private static void ParseWhitelist(List<String> whitelist, DeviceTwinName fullNameWhitelist, DeviceTwinName prefixWhitelist) {
+
+        List<String> tags = whitelist.stream().filter(m -> m.startsWith(WHITELIST_TAG_PREFIX)).
+                map(m -> m.substring(WHITELIST_TAG_PREFIX.length())).collect(Collectors.toList());
+
+        List<String> reported = whitelist.stream().filter(m -> m.startsWith(WHITELIST_REPORTED_PREFIX)).
+                map(m -> m.substring(WHITELIST_REPORTED_PREFIX.length())).collect(Collectors.toList());
+
+        List<String> fixedTags = tags.stream().filter(m -> !m.endsWith("*")).collect(Collectors.toList());
+        List<String> fixedReported = reported.stream().filter(m -> !m.endsWith("*")).collect(Collectors.toList());
+        List<String> regexTags = tags.stream().filter(m -> m.endsWith("*")).
+                map(m -> m.substring(0, m.length() - 1)).collect(Collectors.toList());
+
+        List<String> regexReported = reported.stream().filter(m -> m.endsWith("*")).
+                map(m -> m.substring(0, m.length() - 1)).collect(Collectors.toList());
+
+        fullNameWhitelist.setTags(new HashSet<>(fixedTags));
+        fullNameWhitelist.setReportedProperties(new HashSet<>(fixedReported));
+        prefixWhitelist.setTags(new HashSet<>(regexTags));
+        prefixWhitelist.setReportedProperties(new HashSet<>(regexReported));
+    }
+
 }

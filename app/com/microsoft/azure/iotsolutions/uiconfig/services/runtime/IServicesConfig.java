@@ -2,6 +2,8 @@
 
 package com.microsoft.azure.iotsolutions.uiconfig.services.runtime;
 
+import java.util.List;
+
 public interface IServicesConfig {
 
     String getBingMapKey();
@@ -15,6 +17,8 @@ public interface IServicesConfig {
     String getHubManagerApiUrl();
 
     String getTelemetryApiUrl();
+
+    List<String> getCacheWhiteList();
 
     int getCacheTTL();
 
