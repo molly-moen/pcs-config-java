@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft. All rights reserved.
+
 package com.microsoft.azure.iotsolutions.uiconfig.services.helpers;
 
 import com.microsoft.azure.iotsolutions.uiconfig.services.exceptions.*;
@@ -60,9 +62,8 @@ public class StorageWriteLock<T> {
         } catch (ResourceNotFoundException e) {
             // Nothing to do
         } catch (InterruptedException | ExecutionException | BaseException e) {
-            throw new ExternalDependencyException(String.format("unexcepted error to get %s,%s", this.collectionId, this.key));
+            throw new ExternalDependencyException(String.format("unexcepted error to lock for %s,%s", this.collectionId, this.key));
         }
-
 
         if (!this.testLockFunc.apply(model)) {
             return CompletableFuture.supplyAsync(() -> Optional.of(false));
@@ -70,7 +71,7 @@ public class StorageWriteLock<T> {
         try {
             this.lastValue = model == null ? type.newInstance() : Json.fromJson(Json.parse(model.getData()), type);
         } catch (InstantiationException | IllegalAccessException e) {
-            throw new ExternalDependencyException("falied to newInstance type" + type.getTypeName());
+            throw new ExternalDependencyException("lock error:falied to newInstance type" + type.getTypeName());
         }
         this.setLockFlagAction.accept(this.lastValue, true);
 

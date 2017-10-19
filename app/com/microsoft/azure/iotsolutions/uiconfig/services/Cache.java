@@ -42,6 +42,7 @@ public class Cache implements ICache {
     private final List<String> cacheWhitelist;
     private static final String WHITELIST_TAG_PREFIX = "tags.";
     private static final String WHITELIST_REPORTED_PREFIX = "reported.";
+    private static final long serviceQueryInterval = 10;
 
     @Inject
     public Cache(IStorageAdapterClient storageClient,
@@ -148,7 +149,7 @@ public class Cache implements ICache {
                 try {
                     locked = lock.TryLockAsync().toCompletableFuture().get();
                 } catch (InterruptedException | ExecutionException e) {
-                    // do nothing
+                    throw new ExternalDependencyException("failed to lock");
                 }
                 if (locked == null) {
                     this.log.warn("Cache rebuilding: lock failed due to conflict. Retry soon");
@@ -159,28 +160,21 @@ public class Cache implements ICache {
                 }
                 // Build the cache content
                 CompletableFuture<DeviceTwinName> twinNamesTask = this.GetValidNamesAsync().toCompletableFuture();
-                CompletableFuture<HashSet<String>> simulationNamesTask = null;
-                try {
-                    simulationNamesTask = this.simulationClient.GetDevicePropertyNamesAsync().toCompletableFuture();
-                } catch (URISyntaxException e) {
-                    throw new ExternalDependencyException("falied to get all simulation DevicePropertyNames  ");
-                }
-                try {
-                    CompletableFuture.allOf(twinNamesTask, simulationNamesTask).get();
-                } catch (InterruptedException | ExecutionException e) {
-                    throw new ExternalDependencyException("falied to get all simulation DevicePropertyNames or ValidNames  ");
-                }
-
                 DeviceTwinName twinNames = null;
                 try {
+                    CompletableFuture<HashSet<String>> simulationNamesTask = this.simulationClient.GetDevicePropertyNamesAsync().toCompletableFuture();
+                    CompletableFuture.allOf(twinNamesTask, simulationNamesTask).get();
                     twinNames = twinNamesTask.get();
-                } catch (InterruptedException | ExecutionException e) {
-                    throw new ExternalDependencyException("falied to get ValidNames  ");
-                }
-                try {
                     twinNames.getReportedProperties().addAll(simulationNamesTask.get());
-                } catch (InterruptedException | ExecutionException e) {
-                    throw new ExternalDependencyException("falied to get all simulation DevicePropertyNames  ");
+                } catch (Exception e) {
+                    this.log.warn("Some underlying service is not ready. Retry after " + this.serviceQueryInterval);
+                    try {
+                        lock.ReleaseAsync().toCompletableFuture().get();
+                        Thread.sleep(this.serviceQueryInterval);
+                    } catch (Exception ex) {
+                        throw new ExternalDependencyException("failed to release lock");
+                    }
+                    continue;
                 }
 
                 Boolean updated = null;
@@ -259,5 +253,4 @@ public class Cache implements ICache {
         prefixWhitelist.setTags(new HashSet<>(regexTags));
         prefixWhitelist.setReportedProperties(new HashSet<>(regexReported));
     }
-
 }
