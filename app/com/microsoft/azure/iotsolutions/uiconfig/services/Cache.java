@@ -176,14 +176,14 @@ public class Cache implements ICache {
                     continue;
                 }
 
-                Boolean updated = null;
+                Boolean updated = false;
                 try {
                     updated = lock.writeAndReleaseAsync(new CacheValue(twinNames.getTags(), twinNames.getReportedProperties())).toCompletableFuture().get();
                 } catch (InterruptedException | ExecutionException e) {
                     throw new ExternalDependencyException(String.format("falied to WriteAndRelease lock for %s,%s ", CacheCollectionId, CacheKey));
                 }
 
-                if (Boolean.TRUE.equals(updated)) {
+                if (updated) {
                     return CompletableFuture.supplyAsync(() -> true);
                 }
 

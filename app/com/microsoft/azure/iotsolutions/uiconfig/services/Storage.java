@@ -102,16 +102,9 @@ public class Storage implements IStorage {
     @Override
     public CompletionStage<Logo> getLogoAsync() {
         try {
-            return client.getAsync(SolutionCollectionId, LogoKey)
-                    .handle((m, error) -> {
-                        if (error != null) {
-                            return Logo.Default;
-                        } else {
-                            return fromJson(m.getData(), Logo.class);
-                        }
-                    });
+            return client.getAsync(SolutionCollectionId, LogoKey).thenApplyAsync(m -> fromJson(m.getData(), Logo.class));
         } catch (BaseException ex) {
-            throw new CompletionException("Unable to get logo", ex);
+            return CompletableFuture.supplyAsync(() -> Logo.getDefault());
         }
     }
 
