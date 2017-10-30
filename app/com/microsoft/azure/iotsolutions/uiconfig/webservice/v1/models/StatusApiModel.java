@@ -29,7 +29,7 @@ public final class StatusApiModel {
 
     @JsonProperty("Name")
     public String getName() {
-        return "UIConfig";
+        return "Config";
     }
 
     @JsonProperty("Status")
@@ -72,7 +72,7 @@ public final class StatusApiModel {
     @JsonProperty("$metadata")
     public Dictionary<String, String> getMetadata() {
         return new Hashtable<String, String>() {{
-            put("$type", "Status;" + Version.Path);
+            put("$type", "Status;" + Version.Number);
             put("$uri", "/" + Version.Path + "/status");
         }};
     }

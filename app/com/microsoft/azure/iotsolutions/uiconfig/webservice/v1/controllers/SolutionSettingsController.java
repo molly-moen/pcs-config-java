@@ -45,7 +45,7 @@ public final class SolutionSettingsController extends Controller {
 
     public CompletionStage<Result> getLogoAsync() throws BaseException {
         return storage.getLogoAsync()
-                .thenApply(result -> ok(setImageResponse(result)));
+                .thenApply(result -> ok(setImageResponse(result)).as(result.getType()));
     }
 
     public CompletionStage<Result> setLogoAsync() throws BaseException {
@@ -54,12 +54,8 @@ public final class SolutionSettingsController extends Controller {
         model.setType(request().contentType().orElse("application/octet-stream"));
         model.setImage(Base64.getEncoder().encodeToString(bytes));
         //for some unknown issue on travis test, make a variable to refer the response in current thread context.
-        Http.Response response = response();
         return storage.setLogoAsync(model)
-                .thenApply(result -> {
-                    response.setHeader(CONTENT_TYPE, model.getType());
-                    return ok(setImageResponse(result));
-                });
+                .thenApply(result -> ok(setImageResponse(result)).as(model.getType()));
     }
 
     private byte[] setImageResponse(Logo model) {

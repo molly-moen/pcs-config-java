@@ -40,7 +40,7 @@ public class DeviceGroupListApiModel {
         items = StreamSupport.stream(models.spliterator(), false)
                 .map(m -> new DeviceGroupApiModel(m)).collect(Collectors.toList());
         metadata = new Hashtable<String, String>();
-        metadata.put("$type", String.format("DeviceGroup;%s", Version.Number));
+        metadata.put("$type", String.format("DeviceGroupList;%s", Version.Number));
         metadata.put("$url", String.format("/%s/devicegroups", Version.Path));
     }
 }
