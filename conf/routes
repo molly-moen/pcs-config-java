@@ -5,6 +5,7 @@ GET           /v1/status/                            com.microsoft.azure.iotsolu
 GET           /v1/devicegroups                      com.microsoft.azure.iotsolutions.uiconfig.webservice.v1.controllers.DeviceGroupController.getAllAsync
 GET           /v1/devicegroups/                     com.microsoft.azure.iotsolutions.uiconfig.webservice.v1.controllers.DeviceGroupController.getAllAsync
 GET           /v1/devicegroups/:id                  com.microsoft.azure.iotsolutions.uiconfig.webservice.v1.controllers.DeviceGroupController.getAsync(id)
+GET           /v1/devicegroups/:id/                  com.microsoft.azure.iotsolutions.uiconfig.webservice.v1.controllers.DeviceGroupController.getAsync(id)
 POST          /v1/devicegroups                      com.microsoft.azure.iotsolutions.uiconfig.webservice.v1.controllers.DeviceGroupController.createAsync
 POST          /v1/devicegroups/                      com.microsoft.azure.iotsolutions.uiconfig.webservice.v1.controllers.DeviceGroupController.createAsync
 PUT           /v1/devicegroups/:id                  com.microsoft.azure.iotsolutions.uiconfig.webservice.v1.controllers.DeviceGroupController.updateAsync(id)
