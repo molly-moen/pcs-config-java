@@ -86,7 +86,7 @@ public class IothubManagerServiceClientTest {
         client = new IothubManagerServiceClient(
                 mockHttpClient,
                 new ServicesConfig(null,null, null, MockServiceUri, 0, 0, null,null,null));
-        DeviceTwinName result = this.client.GetDeviceTwinNamesAsync().toCompletableFuture().get();
+        DeviceTwinName result = this.client.getDeviceTwinNamesAsync().toCompletableFuture().get();
         assertEquals(String.join(",", new TreeSet<String>(result.getTags())), "device1e,device1f.f,device2e,device2f.f,g");
         assertEquals(String.join(",", new TreeSet<String>(result.getReportedProperties())), "c,device1a,device1b.b,device2a,device2b.b");
     }

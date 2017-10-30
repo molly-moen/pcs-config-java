@@ -42,7 +42,7 @@ public class StorageWriteLock<T> {
         this.type = type;
     }
 
-    private CompletionStage<String> UpdateValueAsync(T value, String etag) throws BaseException {
+    private CompletionStage<String> updateValueAsync(T value, String etag) throws BaseException {
         return this.client.updateAsync(
                 this.collectionId,
                 this.key,
@@ -50,7 +50,7 @@ public class StorageWriteLock<T> {
                 etag).thenApplyAsync(m -> m.getETag());
     }
 
-    public CompletionStage<Optional<Boolean>> TryLockAsync() throws ResourceOutOfDateException, ExternalDependencyException {
+    public CompletionStage<Optional<Boolean>> tryLockAsync() throws ResourceOutOfDateException, ExternalDependencyException {
         if (this.lastETag != null) {
             throw new ResourceOutOfDateException("Lock has already been acquired");
         }
@@ -76,7 +76,7 @@ public class StorageWriteLock<T> {
         this.setLockFlagAction.accept(this.lastValue, true);
 
         try {
-            return this.UpdateValueAsync(this.lastValue, model == null ? null : model.getETag()).thenAccept(m -> {
+            return this.updateValueAsync(this.lastValue, model == null ? null : model.getETag()).thenAccept(m -> {
                 this.lastETag = m;
             }).thenApplyAsync((m) -> Optional.of(true));
         } catch (BaseException e) {
@@ -84,7 +84,7 @@ public class StorageWriteLock<T> {
         }
     }
 
-    public CompletionStage ReleaseAsync() throws ResourceOutOfDateException {
+    public CompletionStage releaseAsync() throws ResourceOutOfDateException {
         if (this.lastETag == null) {
             throw new ResourceOutOfDateException("Lock was not acquired yet");
         }
@@ -92,7 +92,7 @@ public class StorageWriteLock<T> {
         this.setLockFlagAction.accept(this.lastValue, false);
 
         try {
-            return this.UpdateValueAsync(this.lastValue, this.lastETag).thenAcceptAsync(m -> {
+            return this.updateValueAsync(this.lastValue, this.lastETag).thenAcceptAsync(m -> {
             });
         } catch (BaseException e) {
             // Nothing to do
@@ -102,14 +102,14 @@ public class StorageWriteLock<T> {
         });
     }
 
-    public CompletionStage<Boolean> WriteAndReleaseAsync(T newValue) throws ResourceOutOfDateException {
+    public CompletionStage<Boolean> writeAndReleaseAsync(T newValue) throws ResourceOutOfDateException {
         if (this.lastETag == null) {
             throw new ResourceOutOfDateException("Lock was not acquired yet");
         }
 
         this.setLockFlagAction.accept(newValue, false);
         try {
-            return this.UpdateValueAsync(newValue, this.lastETag).thenApplyAsync(m -> {
+            return this.updateValueAsync(newValue, this.lastETag).thenApplyAsync(m -> {
                 this.lastETag = null;
                 return true;
             });

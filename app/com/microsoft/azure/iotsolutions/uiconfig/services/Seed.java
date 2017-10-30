@@ -17,7 +17,6 @@ import play.Logger;
 import play.libs.Json;
 
 import java.io.BufferedReader;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.HashSet;
@@ -59,23 +58,20 @@ public class Seed implements ISeed {
         this.simulationClient = simulationClient;
         this.telemetryClient = telemetryClient;
         // global setting is not recommend for application_onStart event, PLS refer here for details :https://www.playframework.com/documentation/2.6.x/GlobalSettings
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    Thread.sleep(10000);
-                    TrySeedAsync().toCompletableFuture().get();
-                } catch (Exception e) {
-                    Logger.of(Seed.class).error("TrySeedAsync error");
-                }
+        new Thread(() -> {
+            try {
+                Thread.sleep(10000);
+                trySeedAsync().toCompletableFuture().get();
+            } catch (Exception e) {
+                Logger.of(Seed.class).error("TrySeedAsync error");
             }
         }).start();
     }
 
     @Override
-    public CompletionStage TrySeedAsync() throws ExternalDependencyException {
+    public CompletionStage trySeedAsync() throws ExternalDependencyException {
         try {
-            if (!(this.mutex.EnterAsync(SeedCollectionId, MutexKey, this.mutexTimeout).toCompletableFuture().get().booleanValue())) {
+            if (!(this.mutex.enterAsync(SeedCollectionId, MutexKey, this.mutexTimeout).toCompletableFuture().get().booleanValue())) {
                 this.log.info("Seed skipped (conflict)");
                 return CompletableFuture.runAsync(() -> {
                 });
@@ -85,7 +81,7 @@ public class Seed implements ISeed {
             throw new ExternalDependencyException("Seed failed");
         }
         try {
-            if (this.CheckCompletedFlagAsync().toCompletableFuture().get().booleanValue()) {
+            if (this.checkCompletedFlagAsync().toCompletableFuture().get().booleanValue()) {
                 this.log.info("Seed skipped (completed)");
                 return CompletableFuture.runAsync(() -> {
                 });
@@ -97,10 +93,10 @@ public class Seed implements ISeed {
 
         try {
             this.log.info("Seed begin");
-            this.SeedAsync(this.config.getSeedTemplate());
+            this.seedAsync(this.config.getSeedTemplate());
             this.log.info("Seed end");
-            this.SetCompletedFlagAsync().toCompletableFuture().get();
-            this.mutex.LeaveAsync(SeedCollectionId, MutexKey).toCompletableFuture().get();
+            this.setCompletedFlagAsync().toCompletableFuture().get();
+            this.mutex.leaveAsync(SeedCollectionId, MutexKey).toCompletableFuture().get();
         } catch (InterruptedException | ExecutionException | BaseException e) {
             log.error("Seed failed");
             throw new ExternalDependencyException("Seed failed");
@@ -109,7 +105,7 @@ public class Seed implements ISeed {
         });
     }
 
-    private CompletionStage<Boolean> CheckCompletedFlagAsync() throws ExternalDependencyException {
+    private CompletionStage<Boolean> checkCompletedFlagAsync() throws ExternalDependencyException {
         try {
             return this.storageClient.getAsync(SeedCollectionId, CompletedFlagKey).thenApplyAsync(m -> new Boolean(true));
         } catch (ResourceNotFoundException e) {
@@ -120,7 +116,7 @@ public class Seed implements ISeed {
         }
     }
 
-    private CompletionStage SetCompletedFlagAsync() throws ExternalDependencyException {
+    private CompletionStage setCompletedFlagAsync() throws ExternalDependencyException {
         try {
             return this.storageClient.updateAsync(SeedCollectionId, CompletedFlagKey, "true", "*");
         } catch (BaseException e) {
@@ -129,7 +125,7 @@ public class Seed implements ISeed {
         }
     }
 
-    private CompletionStage SeedAsync(String template) throws ExternalDependencyException, InvalidInputException {
+    private CompletionStage seedAsync(String template) throws ExternalDependencyException, InvalidInputException {
         String content = "";
         try (InputStream is = this.getClass().getResourceAsStream("data/default.json")) {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
@@ -325,10 +321,10 @@ public class Seed implements ISeed {
                     "  ]" +
                     "}";
         }
-        return this.SeedSingleTemplateAsync(content);
+        return this.seedSingleTemplateAsync(content);
     }
 
-    private CompletionStage SeedSingleTemplateAsync(String content) throws InvalidInputException {
+    private CompletionStage seedSingleTemplateAsync(String content) throws InvalidInputException {
         Template template;
         try {
             template = Json.fromJson(Json.parse(content), Template.class);
@@ -363,20 +359,20 @@ public class Seed implements ISeed {
 
         StreamSupport.stream(template.getRules().spliterator(), false).forEach(m -> {
             try {
-                this.telemetryClient.UpdateRuleAsync(m, "*");
+                this.telemetryClient.updateRuleAsync(m, "*");
             } catch (Exception ex) {
                 this.log.error(String.format("Failed to seed default rule %s", m.getDescription()));
             }
         });
 
         try {
-            SimulationApiModel simulationModel = this.simulationClient.GetSimulationAsync().toCompletableFuture().get();
+            SimulationApiModel simulationModel = this.simulationClient.getSimulationAsync().toCompletableFuture().get();
 
             if (simulationModel != null) {
                 this.log.info("Skip seed simulation since there is already one simuation");
             } else {
                 simulationModel = new SimulationApiModel(Lists.newArrayList(template.getDeviceModels()), "*", "1");
-                this.simulationClient.UpdateSimulationAsync(simulationModel).toCompletableFuture().get();
+                this.simulationClient.updateSimulationAsync(simulationModel).toCompletableFuture().get();
             }
         } catch (Exception ex) {
             this.log.info("Failed to seed default simulation");
