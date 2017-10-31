@@ -34,6 +34,7 @@ public class Seed implements ISeed {
     private final String MutexKey = "seedMutex";
     private final String CompletedFlagKey = "seedCompleted";
     private int mutexTimeout = 60 * 5;
+    private static final int waitInterval = 10000;
 
     private IServicesConfig config;
     private IStorageMutex mutex;
@@ -60,10 +61,10 @@ public class Seed implements ISeed {
         // global setting is not recommend for application_onStart event, PLS refer here for details :https://www.playframework.com/documentation/2.6.x/GlobalSettings
         new Thread(() -> {
             try {
-                Thread.sleep(10000);
+                Thread.sleep(Seed.waitInterval);
                 trySeedAsync().toCompletableFuture().get();
             } catch (Exception e) {
-                Logger.of(Seed.class).error("TrySeedAsync error");
+                this.log.error("TrySeedAsync error", e);
             }
         }).start();
     }

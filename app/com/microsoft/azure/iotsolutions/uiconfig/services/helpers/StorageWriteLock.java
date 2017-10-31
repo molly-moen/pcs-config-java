@@ -5,6 +5,7 @@ package com.microsoft.azure.iotsolutions.uiconfig.services.helpers;
 import com.microsoft.azure.iotsolutions.uiconfig.services.exceptions.*;
 import com.microsoft.azure.iotsolutions.uiconfig.services.external.IStorageAdapterClient;
 import com.microsoft.azure.iotsolutions.uiconfig.services.external.ValueApiModel;
+import play.Logger;
 import play.libs.Json;
 
 import java.util.Optional;
@@ -21,6 +22,7 @@ public class StorageWriteLock<T> {
     private final IStorageAdapterClient client;
     private final BiConsumer<T, Boolean> setLockFlagAction;
     private final Function<ValueApiModel, Boolean> testLockFunc;
+    private static Logger.ALogger log = null;
 
     private Class<T> type;
     private T lastValue;
@@ -40,6 +42,7 @@ public class StorageWriteLock<T> {
         this.testLockFunc = testLockFunc;
         this.lastETag = null;
         this.type = type;
+        log = Logger.of(this.getClass());
     }
 
     private CompletionStage<String> updateValueAsync(T value, String etag) throws BaseException {
@@ -62,7 +65,9 @@ public class StorageWriteLock<T> {
         } catch (ResourceNotFoundException e) {
             // Nothing to do
         } catch (InterruptedException | ExecutionException | BaseException e) {
-            throw new ExternalDependencyException(String.format("unexcepted error to lock for %s,%s", this.collectionId, this.key));
+            String errorMessage = String.format("unexcepted error to lock for %s,%s", this.collectionId, this.key);
+            this.log.error(errorMessage, e);
+            throw new ExternalDependencyException(errorMessage);
         }
 
         if (!this.testLockFunc.apply(model)) {

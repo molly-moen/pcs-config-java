@@ -61,7 +61,7 @@ public class Cache implements ICache {
                 Thread.sleep(10000);
                 rebuildCacheAsync().toCompletableFuture().get();
             } catch (Exception e) {
-                Logger.of(Seed.class).error("RebuildCacheAsync");
+                this.log.error("RebuildCacheAsync error", e);
             }
         }).start();
     }
@@ -72,8 +72,8 @@ public class Cache implements ICache {
             return storageClient.getAsync(CacheCollectionId, CacheKey).thenApplyAsync(m ->
                     Json.fromJson(Json.parse(m.getData()), CacheValue.class)
             );
-        } catch (Exception ex) {
-            log.info(String.format("%s:%s not found.", CacheCollectionId, CacheKey));
+        } catch (ResourceNotFoundException e) {
+            this.log.error(String.format("%s:%s not found.", CacheCollectionId, CacheKey));
             return CompletableFuture.supplyAsync(() -> new CacheValue(new HashSet<String>(), new HashSet<String>()));
         }
     }
@@ -148,6 +148,7 @@ public class Cache implements ICache {
                 try {
                     locked = lock.tryLockAsync().toCompletableFuture().get();
                 } catch (InterruptedException | ExecutionException e) {
+                    this.log.error("failed to lock", e);
                     throw new ExternalDependencyException("failed to lock");
                 }
                 if (locked == null) {
@@ -171,6 +172,7 @@ public class Cache implements ICache {
                         lock.releaseAsync().toCompletableFuture().get();
                         Thread.sleep(this.serviceQueryInterval);
                     } catch (Exception ex) {
+                        this.log.error("failed to release lock", e);
                         throw new ExternalDependencyException("failed to release lock");
                     }
                     continue;
@@ -180,7 +182,9 @@ public class Cache implements ICache {
                 try {
                     updated = lock.writeAndReleaseAsync(new CacheValue(twinNames.getTags(), twinNames.getReportedProperties())).toCompletableFuture().get();
                 } catch (InterruptedException | ExecutionException e) {
-                    throw new ExternalDependencyException(String.format("falied to WriteAndRelease lock for %s,%s ", CacheCollectionId, CacheKey));
+                    String errorMessage = String.format("falied to WriteAndRelease lock for %s,%s ", CacheCollectionId, CacheKey);
+                    this.log.error(errorMessage, e);
+                    throw new ExternalDependencyException(errorMessage);
                 }
 
                 if (updated) {

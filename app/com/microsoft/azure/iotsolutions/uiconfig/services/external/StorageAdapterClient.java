@@ -18,6 +18,7 @@ import java.net.URISyntaxException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ExecutionException;
 
 public class StorageAdapterClient implements IStorageAdapterClient {
     private final IHttpClient httpClient;
@@ -47,7 +48,7 @@ public class StorageAdapterClient implements IStorageAdapterClient {
             return CompletableFuture.supplyAsync(() -> fromJson(response.getContent(), ValueApiModel.class));
         } catch (ResourceNotFoundException e) {
             throw e;
-        } catch (Exception e) {
+        } catch (ExecutionException|InterruptedException|BaseException e) {
             throw new CompletionException("Unable to retrieve " + String.format("collections/%s/values/%s", collectionId, key), e);
         }
     }

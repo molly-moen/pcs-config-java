@@ -10,7 +10,7 @@ import java.util.concurrent.CompletionStage;
 @ImplementedBy(StorageAdapterClient.class)
 public interface IStorageAdapterClient {
 
-    CompletionStage<ValueApiModel> getAsync(String collectionId, String key) throws BaseException;
+    CompletionStage<ValueApiModel> getAsync(String collectionId, String key) throws ResourceNotFoundException;
 
     CompletionStage<ValueListApiModel> getAllAsync(String collectionId) throws BaseException;
 
