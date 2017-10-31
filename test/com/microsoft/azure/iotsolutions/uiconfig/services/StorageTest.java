@@ -5,7 +5,7 @@ package com.microsoft.azure.iotsolutions.uiconfig.services;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.collect.Lists;
 import com.microsoft.azure.iotsolutions.uiconfig.services.exceptions.BaseException;
-import com.microsoft.azure.iotsolutions.uiconfig.services.external.ConditionApiModel;
+import com.microsoft.azure.iotsolutions.uiconfig.services.exceptions.ResourceNotFoundException;
 import com.microsoft.azure.iotsolutions.uiconfig.services.external.IStorageAdapterClient;
 import com.microsoft.azure.iotsolutions.uiconfig.services.external.ValueApiModel;
 import com.microsoft.azure.iotsolutions.uiconfig.services.external.ValueListApiModel;
@@ -70,7 +70,7 @@ public class StorageTest {
     @Category({UnitTest.class})
     public void getThemeAsyncDefaultTest() throws BaseException, ExecutionException, InterruptedException {
         Mockito.when(mockClient.getAsync(Mockito.anyString(), Mockito.anyString()))
-                .thenThrow(new BaseException());
+                .thenThrow(new ResourceNotFoundException());
         storage = new Storage(mockClient, config);
         Object result = storage.getThemeAsync().toCompletableFuture().get();
         JsonNode node = Json.toJson(result);
