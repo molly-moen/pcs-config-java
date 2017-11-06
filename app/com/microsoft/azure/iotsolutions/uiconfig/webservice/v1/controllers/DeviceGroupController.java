@@ -38,7 +38,7 @@ public final class DeviceGroupController extends Controller {
 
     public CompletionStage<Result> createAsync() throws BaseException, BadRequestException {
         JsonNode json = request().body().asJson();
-        if(json == null || json.size() == 0) {
+        if (json == null || json.size() == 0) {
             throw new BadRequestException("request body is empty");
         }
         DeviceGroupApiModel input = Json.fromJson(json, DeviceGroupApiModel.class);
@@ -47,7 +47,7 @@ public final class DeviceGroupController extends Controller {
 
     public CompletionStage<Result> updateAsync(String id) throws BaseException, BadRequestException {
         JsonNode json = request().body().asJson();
-        if(json == null || json.size() == 0) {
+        if (json == null || json.size() == 0) {
             throw new BadRequestException("request body is empty");
         }
         DeviceGroupApiModel input = Json.fromJson(json, DeviceGroupApiModel.class);
