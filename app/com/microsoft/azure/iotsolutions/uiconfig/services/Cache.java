@@ -124,7 +124,7 @@ public class Cache implements ICache {
             // Build the cache content
             DeviceTwinName twinNames = null;
             try {
-                twinNames = this.updateCache();
+                twinNames = this.getAllTwinNames();
             } catch (Exception e) {
                 this.log.warn("Some underlying service is not ready. Retry after " + this.serviceQueryInterval);
                 try {
@@ -137,7 +137,7 @@ public class Cache implements ICache {
                 continue;
             }
 
-            Boolean updated = this.unlockCache(lock, twinNames);
+            Boolean updated = this.writeAndUnlockCache(lock, twinNames);
 
             if (updated) {
                 return CompletableFuture.completedFuture(true);
@@ -148,23 +148,49 @@ public class Cache implements ICache {
     }
 
     private boolean needBuild(boolean force, ValueApiModel twin) {
-        boolean needBuild = false;
-        // validate timestamp
-        if (force || twin == null) {
-            needBuild = true;
-        } else {
-            boolean rebuilding = Json.fromJson(Json.parse(twin.getData()), CacheValue.class).isRebuilding();
-            DateTimeFormatter formatter = DateTimeFormat.forPattern("yyyy-MM-dd'T'HH:mm:ssZZ");
-            DateTime timestamp = formatter.parseDateTime(twin.getMetadata().get("$modified"));
-            needBuild = needBuild || !rebuilding && timestamp.plusSeconds(this.cacheTTL).isBeforeNow();
-            needBuild = needBuild || rebuilding && timestamp.plusSeconds(this.rebuildTimeout).isBeforeNow();
+        if (force) {
+            this.log.info("Cache will be rebuilt due to the force flag");
+            return true;
         }
-        return needBuild;
+
+        if (twin == null) {
+            this.log.info("Cache will be rebuilt since no cache was found");
+            return true;
+        }
+
+        CacheValue cachedValue = Json.fromJson(Json.parse(twin.getData()), CacheValue.class);
+        boolean emptyCache = (cachedValue.getTags() == null || cachedValue.getTags().isEmpty())
+                && (cachedValue.getReported() == null || cachedValue.getReported().isEmpty());
+        if (emptyCache) {
+            this.log.info("Cache will be rebuilt since existing cache is empty");
+            return true;
+        }
+
+        boolean rebuilding = cachedValue.isRebuilding();
+        DateTimeFormatter formatter = DateTimeFormat.forPattern("yyyy-MM-dd'T'HH:mm:ssZZ");
+        DateTime timestamp = formatter.parseDateTime(twin.getMetadata().get("$modified"));
+        if (rebuilding) {
+            if (timestamp.plusSeconds(this.rebuildTimeout).isBeforeNow()) {
+                this.log.info("Cache will be rebuilt since last rebuilding was timeout");
+                return true;
+            } else {
+                this.log.info("Cache rebuilding skipped since it was rebuilding by other instance");
+                return false;
+            }
+        } else {
+            if (timestamp.plusSeconds(this.cacheTTL).isBeforeNow()) {
+                this.log.info("Cache will be rebuilt since it was expired");
+                return true;
+            } else {
+                this.log.info("Cache rebuilding skipped since it was not expired");
+                return false;
+            }
+        }
     }
 
     private CompletionStage<DeviceTwinName> getValidNamesAsync() throws ExternalDependencyException {
         DeviceTwinName fullNameWhitelist = new DeviceTwinName(), prefixWhitelist = new DeviceTwinName();
-        parseWhitelist(this.cacheWhitelist, fullNameWhitelist, prefixWhitelist);
+        this.parseWhitelist(this.cacheWhitelist, fullNameWhitelist, prefixWhitelist);
 
         DeviceTwinName validNames = new DeviceTwinName(fullNameWhitelist.getTags(), fullNameWhitelist.getReportedProperties());
 
@@ -174,7 +200,7 @@ public class Cache implements ICache {
                 allNames = this.iotHubClient.getDeviceTwinNamesAsync().toCompletableFuture().get();
             } catch (InterruptedException | ExecutionException | URISyntaxException e) {
                 String errorMessage = "failed to get deviceTwinNames";
-                log.error(errorMessage,e);
+                log.error(errorMessage, e);
                 throw new ExternalDependencyException(errorMessage, e);
             }
 
@@ -188,7 +214,7 @@ public class Cache implements ICache {
         return CompletableFuture.supplyAsync(() -> validNames);
     }
 
-    private static void parseWhitelist(List<String> whitelist, DeviceTwinName fullNameWhitelist, DeviceTwinName prefixWhitelist) {
+    private void parseWhitelist(List<String> whitelist, DeviceTwinName fullNameWhitelist, DeviceTwinName prefixWhitelist) {
 
         List<String> tags = whitelist.stream().filter(m -> m.startsWith(WHITELIST_TAG_PREFIX)).
                 map(m -> m.substring(WHITELIST_TAG_PREFIX.length())).collect(Collectors.toList());
@@ -216,7 +242,7 @@ public class Cache implements ICache {
         } catch (ResourceNotFoundException e) {
             log.info(String.format("SetCacheAsync %s:%s not found.", CacheCollectionId, CacheKey));
         } catch (InterruptedException | ExecutionException | BaseException e) {
-            log.error(String.format("SetCacheAsync InterruptedException occured in storageClient.getAsync(%s, %s).", CacheCollectionId, CacheKey));
+            log.error(String.format("SetCacheAsync InterruptedException occurred in storageClient.getAsync(%s, %s).", CacheCollectionId, CacheKey));
             throw new ExternalDependencyException("SetCacheAsync failed");
         }
         return null;
@@ -249,7 +275,7 @@ public class Cache implements ICache {
         }
     }
 
-    private DeviceTwinName updateCache() throws ExternalDependencyException, URISyntaxException, ExecutionException, InterruptedException {
+    private DeviceTwinName getAllTwinNames() throws ExternalDependencyException, URISyntaxException, ExecutionException, InterruptedException {
         CompletableFuture<DeviceTwinName> twinNamesTask = this.getValidNamesAsync().toCompletableFuture();
         CompletableFuture<HashSet<String>> simulationNamesTask = this.simulationClient.getDevicePropertyNamesAsync().toCompletableFuture();
         CompletableFuture.allOf(twinNamesTask, simulationNamesTask).get();
@@ -258,11 +284,11 @@ public class Cache implements ICache {
         return twinNames;
     }
 
-    private Boolean unlockCache(StorageWriteLock<CacheValue> lock, DeviceTwinName twinNames) throws ExternalDependencyException, ResourceOutOfDateException {
+    private Boolean writeAndUnlockCache(StorageWriteLock<CacheValue> lock, DeviceTwinName twinNames) throws ExternalDependencyException, ResourceOutOfDateException {
         try {
             return lock.writeAndReleaseAsync(new CacheValue(twinNames.getTags(), twinNames.getReportedProperties())).toCompletableFuture().get();
         } catch (InterruptedException | ExecutionException e) {
-            String errorMessage = String.format("falied to WriteAndRelease lock for %s,%s ", CacheCollectionId, CacheKey);
+            String errorMessage = String.format("failed to WriteAndRelease lock for %s,%s ", CacheCollectionId, CacheKey);
             this.log.error(errorMessage, e);
             throw new ExternalDependencyException(errorMessage);
         }
