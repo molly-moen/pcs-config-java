@@ -154,7 +154,7 @@ public class Cache implements ICache {
         }
 
         if (twin == null) {
-            this.log.info("Cache will be rebuilt since no cache was found");
+            this.log.info("The cache will be built because no cache was found");
             return true;
         }
 
@@ -162,7 +162,7 @@ public class Cache implements ICache {
         boolean emptyCache = (cachedValue.getTags() == null || cachedValue.getTags().isEmpty())
                 && (cachedValue.getReported() == null || cachedValue.getReported().isEmpty());
         if (emptyCache) {
-            this.log.info("Cache will be rebuilt since existing cache is empty");
+            this.log.info("The cache will be rebuilt because the existing cache is empty");
             return true;
         }
 
@@ -171,18 +171,18 @@ public class Cache implements ICache {
         DateTime timestamp = formatter.parseDateTime(twin.getMetadata().get("$modified"));
         if (rebuilding) {
             if (timestamp.plusSeconds(this.rebuildTimeout).isBeforeNow()) {
-                this.log.info("Cache will be rebuilt since last rebuilding was timeout");
+                this.log.info("The cache will be rebuilt because the last rebuild timed out");
                 return true;
             } else {
-                this.log.info("Cache rebuilding skipped since it was rebuilding by other instance");
+                this.log.info("Skipping the cache build because another process is already building it");
                 return false;
             }
         } else {
             if (timestamp.plusSeconds(this.cacheTTL).isBeforeNow()) {
-                this.log.info("Cache will be rebuilt since it was expired");
+                this.log.info("The cache will be rebuild because the previous cache expired");
                 return true;
             } else {
-                this.log.info("Cache rebuilding skipped since it was not expired");
+                this.log.info("Skipping the cache build because the current cache is not expired yet");
                 return false;
             }
         }
