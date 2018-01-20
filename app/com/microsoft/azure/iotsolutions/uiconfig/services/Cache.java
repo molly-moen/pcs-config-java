@@ -122,53 +122,51 @@ public class Cache implements ICache {
                 return CompletableFuture.completedFuture(false);
             }
             // Build the cache content
-            DeviceTwinName twinNames = null;
+            DeviceTwinName deviceTwinName = null;
             try {
-                twinNames = this.getAllTwinNames();
-            } catch (Exception e) {
-                this.log.warn("Some underlying service is not ready. Retry after " + this.serviceQueryInterval);
-                try {
+                deviceTwinName = this.getDevicePropertyNames();
+                if(deviceTwinName.isEmpty()) {
+                    this.log.info("There is no property available to be cached");
                     lock.releaseAsync().toCompletableFuture().get();
-                    Thread.sleep(this.serviceQueryInterval);
-                } catch (Exception ex) {
-                    this.log.error("failed to release lock", e);
-                    throw new ExternalDependencyException("failed to release lock");
+                    return CompletableFuture.completedFuture(false);
                 }
+            } catch (Exception e) {
+                this.log.warn(String.format("Some underlying service is not ready. Retry after %d seconds", this.serviceQueryInterval));
+                lock.releaseAsync().toCompletableFuture().get();
+                Thread.sleep(this.serviceQueryInterval);
                 continue;
             }
 
-            Boolean updated = this.writeAndUnlockCache(lock, twinNames);
+            Boolean updated = this.writeAndUnlockCache(lock, deviceTwinName);
 
             if (updated) {
                 return CompletableFuture.completedFuture(true);
             }
 
-            this.log.warn("Cache rebuilding: write failed due to conflict. Retry soon");
+            this.log.warn("The cache failed to be written due to conflict. Retry soon");
         }
     }
 
-    private boolean needBuild(boolean force, ValueApiModel twin) {
+    private boolean needBuild(boolean force, ValueApiModel valueApiModel) {
         if (force) {
-            this.log.info("Cache will be rebuilt due to the force flag");
+            this.log.info("The cache will be rebuilt due to the force flag");
             return true;
         }
 
-        if (twin == null) {
+        if (valueApiModel == null) {
             this.log.info("The cache will be built because no cache was found");
             return true;
         }
 
-        CacheValue cachedValue = Json.fromJson(Json.parse(twin.getData()), CacheValue.class);
-        boolean emptyCache = (cachedValue.getTags() == null || cachedValue.getTags().isEmpty())
-                && (cachedValue.getReported() == null || cachedValue.getReported().isEmpty());
-        if (emptyCache) {
+        CacheValue cachedValue = Json.fromJson(Json.parse(valueApiModel.getData()), CacheValue.class);
+        if (cachedValue.isEmpty()) {
             this.log.info("The cache will be rebuilt because the existing cache is empty");
             return true;
         }
 
         boolean rebuilding = cachedValue.isRebuilding();
         DateTimeFormatter formatter = DateTimeFormat.forPattern("yyyy-MM-dd'T'HH:mm:ssZZ");
-        DateTime timestamp = formatter.parseDateTime(twin.getMetadata().get("$modified"));
+        DateTime timestamp = formatter.parseDateTime(valueApiModel.getMetadata().get("$modified"));
         if (rebuilding) {
             if (timestamp.plusSeconds(this.rebuildTimeout).isBeforeNow()) {
                 this.log.info("The cache will be rebuilt because the last rebuild timed out");
@@ -275,7 +273,7 @@ public class Cache implements ICache {
         }
     }
 
-    private DeviceTwinName getAllTwinNames() throws ExternalDependencyException, URISyntaxException, ExecutionException, InterruptedException {
+    private DeviceTwinName getDevicePropertyNames() throws ExternalDependencyException, URISyntaxException, ExecutionException, InterruptedException {
         CompletableFuture<DeviceTwinName> twinNamesTask = this.getValidNamesAsync().toCompletableFuture();
         CompletableFuture<HashSet<String>> simulationNamesTask = this.simulationClient.getDevicePropertyNamesAsync().toCompletableFuture();
         CompletableFuture.allOf(twinNamesTask, simulationNamesTask).get();

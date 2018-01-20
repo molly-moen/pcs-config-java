@@ -32,4 +32,9 @@ public class DeviceTwinName {
     public void setReportedProperties(HashSet<String> reportedProperties) {
         this.reportedProperties = reportedProperties;
     }
+
+    public boolean isEmpty() {
+        return (this.tags == null || this.tags.isEmpty())
+                && (this.reportedProperties == null || this.reportedProperties.isEmpty());
+    }
 }
