@@ -114,7 +114,7 @@ public class Cache implements ICache {
         while (true) {
             Optional<Boolean> locked = this.lockCache(lock);
             if (locked == null) {
-                this.log.warn("Cache rebuilding: lock failed due to conflict. Retry soon");
+                this.log.warn(String.format("Cache rebuilding: lock failed due to conflict. Retry after %d seconds", this.serviceQueryInterval));
                 Thread.sleep(this.serviceQueryInterval);
                 continue;
             }
@@ -177,7 +177,7 @@ public class Cache implements ICache {
             }
         } else {
             if (timestamp.plusSeconds(this.cacheTTL).isBeforeNow()) {
-                this.log.info("The cache will be rebuild because the previous cache expired");
+                this.log.info("The cache will be rebuilt because the previous cache expired");
                 return true;
             } else {
                 this.log.info("Skipping the cache build because the current cache is not expired yet");
