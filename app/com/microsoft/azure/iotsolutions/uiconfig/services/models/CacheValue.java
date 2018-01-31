@@ -2,7 +2,6 @@
 
 package com.microsoft.azure.iotsolutions.uiconfig.services.models;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.HashSet;
@@ -51,11 +50,5 @@ public class CacheValue {
 
     public CacheValue(HashSet<String> tags, HashSet<String> reported) {
         this(tags, reported, false);
-    }
-
-    @JsonIgnore
-    public boolean isEmpty() {
-        return (this.tags == null || this.tags.isEmpty())
-                && (this.reported == null || this.reported.isEmpty());
     }
 }

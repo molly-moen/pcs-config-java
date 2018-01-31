@@ -122,22 +122,27 @@ public class Cache implements ICache {
                 return CompletableFuture.completedFuture(false);
             }
             // Build the cache content
-            DeviceTwinName deviceTwinName = null;
+            DeviceTwinName twinNames = null;
             try {
-                deviceTwinName = this.getDevicePropertyNames();
-                if(deviceTwinName.isEmpty()) {
+                twinNames = this.getDevicePropertyNames();
+                if(twinNames.isEmpty()) {
                     this.log.info("There is no property available to be cached");
                     lock.releaseAsync().toCompletableFuture().get();
                     return CompletableFuture.completedFuture(false);
                 }
             } catch (Exception e) {
-                this.log.warn(String.format("Some underlying service is not ready. Retry after %d seconds", this.serviceQueryInterval));
-                lock.releaseAsync().toCompletableFuture().get();
-                Thread.sleep(this.serviceQueryInterval);
+                this.log.warn("Some underlying service is not ready. Retry after " + this.serviceQueryInterval);
+                try {
+                    lock.releaseAsync().toCompletableFuture().get();
+                    Thread.sleep(this.serviceQueryInterval);
+                } catch (Exception ex) {
+                    this.log.error("failed to release lock", e);
+                    throw new ExternalDependencyException("failed to release lock");
+                }
                 continue;
             }
 
-            Boolean updated = this.writeAndUnlockCache(lock, deviceTwinName);
+            Boolean updated = this.writeAndUnlockCache(lock, twinNames);
 
             if (updated) {
                 return CompletableFuture.completedFuture(true);
@@ -147,43 +152,19 @@ public class Cache implements ICache {
         }
     }
 
-    private boolean needBuild(boolean force, ValueApiModel valueApiModel) {
-        if (force) {
-            this.log.info("The cache will be rebuilt due to the force flag");
-            return true;
-        }
-
-        if (valueApiModel == null) {
-            this.log.info("The cache will be built because no cache was found");
-            return true;
-        }
-
-        CacheValue cachedValue = Json.fromJson(Json.parse(valueApiModel.getData()), CacheValue.class);
-        if (cachedValue.isEmpty()) {
-            this.log.info("The cache will be rebuilt because the existing cache is empty");
-            return true;
-        }
-
-        boolean rebuilding = cachedValue.isRebuilding();
-        DateTimeFormatter formatter = DateTimeFormat.forPattern("yyyy-MM-dd'T'HH:mm:ssZZ");
-        DateTime timestamp = formatter.parseDateTime(valueApiModel.getMetadata().get("$modified"));
-        if (rebuilding) {
-            if (timestamp.plusSeconds(this.rebuildTimeout).isBeforeNow()) {
-                this.log.info("The cache will be rebuilt because the last rebuild timed out");
-                return true;
-            } else {
-                this.log.info("Skipping the cache build because another process is already building it");
-                return false;
-            }
+    private boolean needBuild(boolean force, ValueApiModel twin) {
+        boolean needBuild = false;
+        // validate timestamp
+        if (force || twin == null) {
+            needBuild = true;
         } else {
-            if (timestamp.plusSeconds(this.cacheTTL).isBeforeNow()) {
-                this.log.info("The cache will be rebuilt because the previous cache expired");
-                return true;
-            } else {
-                this.log.info("Skipping the cache build because the current cache is not expired yet");
-                return false;
-            }
+            boolean rebuilding = Json.fromJson(Json.parse(twin.getData()), CacheValue.class).isRebuilding();
+            DateTimeFormatter formatter = DateTimeFormat.forPattern("yyyy-MM-dd'T'HH:mm:ssZZ");
+            DateTime timestamp = formatter.parseDateTime(twin.getMetadata().get("$modified"));
+            needBuild = needBuild || !rebuilding && timestamp.plusSeconds(this.cacheTTL).isBeforeNow();
+            needBuild = needBuild || rebuilding && timestamp.plusSeconds(this.rebuildTimeout).isBeforeNow();
         }
+        return needBuild;
     }
 
     private CompletionStage<DeviceTwinName> getValidNamesAsync() throws ExternalDependencyException {
