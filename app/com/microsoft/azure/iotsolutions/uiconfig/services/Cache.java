@@ -42,7 +42,7 @@ public class Cache implements ICache {
     private final List<String> cacheWhitelist;
     private static final String WHITELIST_TAG_PREFIX = "tags.";
     private static final String WHITELIST_REPORTED_PREFIX = "reported.";
-    private static final long serviceQueryInterval = 10;
+    private static final long SERVICE_QUERY_INTERVAL_SECS = 10;
 
     @Inject
     public Cache(IStorageAdapterClient storageClient,
@@ -112,34 +112,33 @@ public class Cache implements ICache {
                 m -> this.needBuild(force, m));
 
         while (true) {
-            Optional<Boolean> locked = this.lockCache(lock);
-            if (locked == null) {
-                this.log.warn(String.format("Cache rebuilding: lock failed due to conflict. Retry after %d seconds", this.serviceQueryInterval));
-                Thread.sleep(this.serviceQueryInterval);
-                continue;
-            }
-            if (!locked.get()) {
-                return CompletableFuture.completedFuture(false);
-            }
-            // Build the cache content
+            // Try to read non-empty twin data at first before locking cache entry
+            // to improve lock condition in case lock has been acquired but twin data
+            // might be still unavailable. When cache data is available, it will be
+            // safer to write an empty cache data in order to acquire lock and then
+            // update twin data into the cache entry.
             DeviceTwinName twinNames = null;
             try {
                 twinNames = this.getDevicePropertyNames();
                 if(twinNames.isEmpty()) {
-                    this.log.info("There is no property available to be cached");
-                    lock.releaseAsync().toCompletableFuture().get();
-                    return CompletableFuture.completedFuture(false);
+                    this.log.info(String.format("There is no property available to be cached. Retry after %d seconds", this.SERVICE_QUERY_INTERVAL_SECS));
+                    Thread.sleep(this.SERVICE_QUERY_INTERVAL_SECS * 1000);
+                    continue;
                 }
             } catch (Exception e) {
-                this.log.warn("Some underlying service is not ready. Retry after " + this.serviceQueryInterval);
-                try {
-                    lock.releaseAsync().toCompletableFuture().get();
-                    Thread.sleep(this.serviceQueryInterval);
-                } catch (Exception ex) {
-                    this.log.error("failed to release lock", e);
-                    throw new ExternalDependencyException("failed to release lock");
-                }
+                this.log.warn("Some underlying service is not ready. Retry after " + this.SERVICE_QUERY_INTERVAL_SECS);
+                Thread.sleep(this.SERVICE_QUERY_INTERVAL_SECS * 1000);
                 continue;
+            }
+
+            Optional<Boolean> locked = this.lockCache(lock);
+            if (locked == null) {
+                this.log.warn(String.format("Cache rebuilding: lock failed due to conflict. Retry after %d seconds", this.SERVICE_QUERY_INTERVAL_SECS));
+                Thread.sleep(this.SERVICE_QUERY_INTERVAL_SECS * 1000);
+                continue;
+            }
+            if (!locked.get()) {
+                return CompletableFuture.completedFuture(false);
             }
 
             Boolean updated = this.writeAndUnlockCache(lock, twinNames);

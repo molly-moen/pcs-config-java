@@ -2,6 +2,8 @@
 
 package com.microsoft.azure.iotsolutions.uiconfig.services.models;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import java.util.HashSet;
 
 public class DeviceTwinName {
@@ -33,6 +35,7 @@ public class DeviceTwinName {
         this.reportedProperties = reportedProperties;
     }
 
+    @JsonIgnore
     public boolean isEmpty() {
         return (this.tags == null || this.tags.isEmpty())
                 && (this.reportedProperties == null || this.reportedProperties.isEmpty());
