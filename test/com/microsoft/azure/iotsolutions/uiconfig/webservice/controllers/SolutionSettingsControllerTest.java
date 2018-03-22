@@ -16,6 +16,8 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.mockito.Mockito;
 import play.libs.Json;
+import play.mvc.Http;
+import play.mvc.Result;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URISyntaxException;
@@ -68,29 +70,81 @@ public class SolutionSettingsControllerTest {
 
     @Test(timeout = 100000)
     @Category({UnitTest.class})
-    public void getLogoAsyncTest() throws BaseException, ExecutionException, InterruptedException {
+    public void GetLogoShouldReturnExpectedNameAndType() throws BaseException, ExecutionException, InterruptedException {
         String image = rand.NextString();
         String type = rand.NextString();
-        Logo model = new Logo(image, type);
+        String name = rand.NextString();
+        Logo model = new Logo(image, type, name, false);
         Mockito.when(mockStorage.getLogoAsync()).thenReturn(CompletableFuture.supplyAsync(() -> model));
         controller = new SolutionSettingsController(mockStorage);
-        TestUtils.setRequest("{\"Name\":\"1\"}");
-        byte[] bytes = TestUtils.getBytes(controller.getLogoAsync().toCompletableFuture().get());
+        Http.Response mockResponse = TestUtils.setRequest("{\"Name\":\"1\"}");
+        Result result = controller.getLogoAsync().toCompletableFuture().get();
+        byte[] bytes = TestUtils.getBytes(result);
         byte[] bytesold = Base64.getDecoder().decode(model.getImage().getBytes());
         assertEquals(ByteString.fromArray(bytes), ByteString.fromArray(bytesold));
+        Mockito.verify(mockResponse).setHeader(Logo.NAME_HEADER, name);
+        Mockito.verify(mockResponse).setHeader(Logo.IS_DEFAULT_HEADER, Boolean.toString(false));
     }
 
     @Test(timeout = 100000)
     @Category({UnitTest.class})
-    public void setLogoAsyncTest() throws BaseException, ExecutionException, InterruptedException, UnsupportedEncodingException, URISyntaxException {
+    public void GetLogoShouldReturnDefaultLogo() throws BaseException, ExecutionException, InterruptedException {
+        Logo model = Logo.Default;
+        Mockito.when(mockStorage.getLogoAsync()).thenReturn(CompletableFuture.supplyAsync(() -> model));
+        controller = new SolutionSettingsController(mockStorage);
+        Http.Response mockResponse = TestUtils.setRequest("{\"Name\":\"1\"}");
+        Result result = controller.getLogoAsync().toCompletableFuture().get();
+        byte[] bytes = TestUtils.getBytes(result);
+        byte[] bytesold = Base64.getDecoder().decode(model.getImage().getBytes());
+        assertEquals(ByteString.fromArray(bytes), ByteString.fromArray(bytesold));
+        Mockito.verify(mockResponse).setHeader(Logo.NAME_HEADER, Logo.Default.getName());
+        Mockito.verify(mockResponse).setHeader(Logo.IS_DEFAULT_HEADER, Boolean.toString(true));
+    }
+
+    @Test(timeout = 100000)
+    @Category({UnitTest.class})
+    public void SetLogoShouldReturnGivenLogoAndName() throws BaseException, ExecutionException, InterruptedException, UnsupportedEncodingException, URISyntaxException {
         String image = rand.NextString();
         String type = rand.NextString();
-        Logo model = new Logo(image, type);
+        String name = rand.NextString();
+        Logo model = new Logo(image, type, name, false);
         Mockito.when(mockStorage.setLogoAsync(Mockito.any(Logo.class))).thenReturn(CompletableFuture.supplyAsync(() -> model));
         controller = new SolutionSettingsController(mockStorage);
-        TestUtils.setRequest("{\"Name\":\"1\"}");
+        Http.Response mockResponse = TestUtils.setRequest("{\"Name\":\"1\"}");
         byte[] bytes = TestUtils.getBytes(controller.setLogoAsync().toCompletableFuture().get());
         byte[] bytesold = Base64.getDecoder().decode(model.getImage().getBytes());
         assertEquals(ByteString.fromArray(bytes), ByteString.fromArray(bytesold));
+        Mockito.verify(mockResponse).setHeader(Logo.NAME_HEADER, name);
+        Mockito.verify(mockResponse).setHeader(Logo.IS_DEFAULT_HEADER, Boolean.toString(false));
+    }
+
+    @Test(timeout = 100000)
+    @Category({UnitTest.class})
+    public void SetLogoShouldReturnGivenLogo() throws BaseException, ExecutionException, InterruptedException, UnsupportedEncodingException, URISyntaxException {
+        String image = rand.NextString();
+        String type = rand.NextString();
+        Logo model = new Logo(image, type, null, false);
+        Mockito.when(mockStorage.setLogoAsync(Mockito.any(Logo.class))).thenReturn(CompletableFuture.supplyAsync(() -> model));
+        controller = new SolutionSettingsController(mockStorage);
+        Http.Response mockResponse = TestUtils.setRequest("{\"Name\":\"1\"}");
+        byte[] bytes = TestUtils.getBytes(controller.setLogoAsync().toCompletableFuture().get());
+        byte[] bytesold = Base64.getDecoder().decode(model.getImage().getBytes());
+        assertEquals(ByteString.fromArray(bytes), ByteString.fromArray(bytesold));
+        Mockito.verify(mockResponse).setHeader(Logo.IS_DEFAULT_HEADER, Boolean.toString(false));
+    }
+
+    @Test(timeout = 100000)
+    @Category({UnitTest.class})
+    public void SetLogoShouldReturnGivenName() throws BaseException, ExecutionException, InterruptedException, UnsupportedEncodingException, URISyntaxException {
+        String name = rand.NextString();
+        Logo model = new Logo(null, null, name, false);
+        Mockito.when(mockStorage.setLogoAsync(Mockito.any(Logo.class))).thenReturn(CompletableFuture.supplyAsync(() -> model));
+        controller = new SolutionSettingsController(mockStorage);
+        Http.Response mockResponse = TestUtils.setRequest("{\"Name\":\"1\"}");
+        byte[] bytes = TestUtils.getBytes(controller.setLogoAsync().toCompletableFuture().get());
+        byte[] emptyBytes = new byte[0];
+        assertEquals(ByteString.fromArray(bytes), ByteString.fromArray(emptyBytes));
+        Mockito.verify(mockResponse).setHeader(Logo.NAME_HEADER, name);
+        Mockito.verify(mockResponse).setHeader(Logo.IS_DEFAULT_HEADER, Boolean.toString(false));
     }
 }
